@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tierlist IA</title>
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="8" r="1.4"/><circle cx="8.5" cy="12.5" r="1.4"/><circle cx="15.5" cy="12.5" r="1.4"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <h1 class="wordmark"><span class="wordmark-a">Tier</span><span class="wordmark-b">list<span class="wordmark-ia">IA</span></span></h1>
+    <div class="sidebar-actions">
+      <button class="btn btn-dark-primary" id="btn-new-ai" type="button"><svg class="ico"><use href="#i-spark"/></svg>Nova com IA</button>
+      <button class="btn btn-dark" id="btn-new-empty" type="button"><svg class="ico"><use href="#i-plus"/></svg>Começar vazia</button>
+    </div>
+    <h2 class="sidebar-title">Suas tierlists</h2>
+    <ul class="saved" id="saved"></ul>
+    <p class="saved-empty" id="saved-empty" hidden>As tierlists que você montar ficam guardadas aqui.</p>
+    <div class="sidebar-foot">
+      <button class="btn btn-dark" id="btn-settings" type="button"><svg class="ico"><use href="#i-gear"/></svg>Configurações</button>
+      <span class="version" id="version"></span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section class="composer" id="composer" aria-label="Montar tierlist com IA">
+      <label class="composer-label" for="request">Sobre o que é a tierlist?</label>
+      <textarea id="request" rows="2" maxlength="4000" placeholder="Ex.: os personagens principais de One Piece, do mais forte ao mais fraco"></textarea>
+      <div class="composer-row">
+        <div class="count" role="group" aria-labelledby="count-label">
+          <span class="count-label" id="count-label">Itens</span>
+          <button class="count-step" id="count-minus" type="button" aria-label="Menos itens"><svg class="ico"><use href="#i-minus"/></svg></button>
+          <output class="count-value" id="count-value" for="count">20</output>
+          <button class="count-step" id="count-plus" type="button" aria-label="Mais itens"><svg class="ico"><use href="#i-plus"/></svg></button>
+          <input class="count-range" id="count" type="range" min="5" max="60" step="1" value="20" aria-label="Quantidade de itens">
+        </div>
+        <label class="switch"><input type="checkbox" id="opt-rank" checked><span class="switch-track" aria-hidden="true"></span>A IA já classifica</label>
+        <label class="switch"><input type="checkbox" id="opt-web" checked><span class="switch-track" aria-hidden="true"></span>Pesquisar na web</label>
+        <button class="btn btn-primary btn-go" id="btn-generate" type="button">Montar tierlist</button>
+      </div>
+      <div class="progress" id="progress" hidden>
+        <div class="progress-bar"><span id="progress-fill"></span></div>
+        <p class="progress-text" id="progress-text" aria-live="polite"></p>
+      </div>
+      <p class="message" id="composer-msg" role="alert" hidden></p>
+    </section>
+
+    <section class="board-wrap" id="board-wrap">
+      <div class="board-empty" id="board-empty">
+        <p class="board-empty-title">Descreve a tierlist ali em cima.</p>
+        <p>A IA escolhe os itens, busca as imagens e já monta as fileiras. Depois é só arrastar para ajustar.</p>
+      </div>
+      <div class="board" id="board" hidden>
+        <header class="board-head">
+          <input class="board-title" id="board-title" maxlength="120" aria-label="Título da tierlist">
+          <div class="board-tools">
+            <span class="save-state" id="save-state" aria-live="polite"></span>
+            <button class="btn" id="btn-add-tier" type="button"><svg class="ico"><use href="#i-plus"/></svg>Fileira</button>
+            <button class="btn" id="btn-add-item" type="button"><svg class="ico"><use href="#i-plus"/></svg>Item</button>
+            <button class="btn" id="btn-export" type="button"><svg class="ico"><use href="#i-download"/></svg>Exportar PNG</button>
+            <button class="btn btn-quiet" id="btn-delete-list" type="button"><svg class="ico"><use href="#i-trash"/></svg>Apagar</button>
+          </div>
+        </header>
+        <p class="board-meta" id="board-meta"></p>
+        <div class="tiers" id="tiers"></div>
+        <div class="pool-wrap">
+          <h3 class="pool-title">Sem fileira <span id="pool-count"></span></h3>
+          <div class="pool zone" id="pool" data-zone="pool"></div>
+        </div>
+        <p class="hint">Arraste as cartas. Com uma carta selecionada: teclas 1 a 9 mandam para a fileira, 0 tira da fileira, setas mudam a ordem, Enter edita.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer-scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawer-title" role="dialog">
+  <header class="drawer-head">
+    <h2 id="drawer-title"></h2>
+    <button class="icon-btn" id="drawer-close" type="button" aria-label="Fechar"><svg class="ico"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+</body>
+</html>
