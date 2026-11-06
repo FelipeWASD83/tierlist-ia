@@ -1,6 +1,6 @@
 // Tierlist IA: the sidebar, the request box, the generation and saving.
 
-import { api, imageUrl } from './api.js';
+import { api, imageUrl, resolvePicture } from './api.js';
 import * as board from './board.js';
 import * as drawer from './drawer.js';
 import { exportPng } from './export.js';
@@ -52,7 +52,7 @@ async function refreshSaved() {
   return tierlists;
 }
 
-async function openList(id) {
+async function openList(id, { resolve = true } = {}) {
   await flushSave();
   try {
     const doc = await api(`tierlists/${id}`);
@@ -60,9 +60,31 @@ async function openList(id) {
     showDoc(doc);
     localStorageSet('ultima', id);
     refreshSaved();
+    // a list closed before its Fandom pictures arrived picks up where it stopped
+    if (resolve) resolvePending();
   } catch (err) {
     drawer.toast(err.message);
   }
+}
+
+// Fetches the pictures the server left pending (Fandom), 4 at a time. Stops if another list is opened.
+async function resolvePending(onProgress) {
+  const doc = board.current();
+  if (!doc) return;
+  const ids = Object.keys(doc.items).filter((id) => !doc.items[id].image && doc.items[id].pending?.length);
+  const queue = [...ids];
+  let done = 0;
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      const image = await resolvePicture(doc.items[id]);
+      if (board.current() !== doc) return;
+      board.updateItem(id, { image, pending: [] });
+      done += 1;
+      onProgress?.(done, ids.length);
+    }
+  };
+  await Promise.all([1, 2, 3, 4].map(worker));
 }
 
 function showDoc(doc) {
@@ -137,7 +159,7 @@ function saveComposerPrefs() {
   clearTimeout(cfgTimer);
   cfgTimer = setTimeout(() => {
     api('config', { method: 'POST', body: {
-      itens: Number($('#count').value), classificar: $('#opt-rank').checked, busca_web: $('#opt-web').checked,
+      itens: Number($('#count').value), busca_web: $('#opt-web').checked,
     } }).catch(() => {});
   }, 400);
 }
@@ -181,7 +203,7 @@ async function generate() {
   const started = performance.now();
   try {
     const { tarefa } = await api('gerar', { method: 'POST', body: {
-      pedido: request, itens: Number($('#count').value), classificar: $('#opt-rank').checked, busca_web: $('#opt-web').checked,
+      pedido: request, itens: Number($('#count').value), busca_web: $('#opt-web').checked,
     } });
     let task;
     for (;;) {
@@ -191,12 +213,18 @@ async function generate() {
       progress(task.fase, task.feito, task.total);
     }
     if (task.estado === 'erro') throw new Error(task.erro);
-    await openList(task.tierlist);
+    await openList(task.tierlist, { resolve: false });
+    if (task.pendentes) {
+      progress('Baixando as imagens da Fandom', 0, task.pendentes);
+      await resolvePending((done, total) => progress('Baixando as imagens da Fandom', done, total));
+    }
     const secs = Math.round((performance.now() - started) / 1000);
+    const doc = board.current();
+    const missing = doc ? Object.values(doc.items).filter((i) => !i.image).length : 0;
     const notes = [`Pronta em ${secs} s`];
     if (task.trocou) notes.push(`o crédito acabou e quem montou foi ${task.modelo}`);
-    if (task.sem_imagem) notes.push(`${task.sem_imagem} sem imagem (clique duas vezes na carta para escolher)`);
-    message(`${notes.join('; ')}.`, true);
+    if (missing) notes.push(`${missing} sem imagem (clique duas vezes na carta para escolher)`);
+    message(`${notes.join('; ')}. Agora é com você: arraste as cartas para as fileiras.`, true);
   } catch (err) {
     message(err.message);
   } finally {
@@ -230,13 +258,11 @@ async function start() {
   $('#count').min = state.limites.min;
   $('#count').max = state.limites.max;
   setCount(state.config.itens);
-  $('#opt-rank').checked = state.config.classificar;
   $('#opt-web').checked = state.config.busca_web;
 
   $('#count').addEventListener('input', () => { setCount(Number($('#count').value)); saveComposerPrefs(); });
   $('#count-minus').addEventListener('click', () => { setCount(Number($('#count').value) - 1); saveComposerPrefs(); });
   $('#count-plus').addEventListener('click', () => { setCount(Number($('#count').value) + 1); saveComposerPrefs(); });
-  $('#opt-rank').addEventListener('change', saveComposerPrefs);
   $('#opt-web').addEventListener('change', saveComposerPrefs);
   $('#btn-generate').addEventListener('click', generate);
   $('#request').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generate(); });

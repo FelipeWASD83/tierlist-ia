@@ -1,7 +1,8 @@
 # Tierlist IA
 
-Você escreve sobre o que é a tierlist, escolhe quantos itens quer, e a IA monta tudo: os itens, as fileiras
-(S, A, B, C, D, F), a classificação e uma imagem para cada um. Depois é só arrastar para ajustar.
+Você escreve sobre o que é a tierlist, escolhe quantos itens quer, e a IA monta: os itens, as fileiras
+(S, A, B, C, D, F) e uma imagem para cada um. Quem classifica é você: as cartas chegam em "Sem fileira" e você
+arrasta cada uma para onde acha que ela merece.
 
 ## Abrir
 
@@ -16,12 +17,14 @@ criptografada pelo Windows, só neste PC. A da OpenAI é opcional: serve de rese
 1. Escreva o tema, do jeito que falaria: "os jogos da FromSoftware", "salgados de padaria", "personagens de
    Naruto pela força".
 2. Escolha a quantidade de itens (5 a 60) e clique em **Montar tierlist**. Ctrl+Enter também funciona.
-3. **A IA já classifica**: desligue se quiser os itens soltos em "Sem fileira" para você mesmo ranquear.
-   **Pesquisar na web**: deixa a IA conferir coisa recente (lançamentos, elencos, temporada).
+3. **Pesquisar na web**: deixa a IA conferir coisa recente (lançamentos, elencos, temporada).
+
+Se o pedido disser um critério ("do mais forte ao mais fraco"), a IA usa só para escolher os itens; a ordem é sua.
 
 No tabuleiro:
 
-- Arraste as cartas entre as fileiras.
+- Arraste as cartas de "Sem fileira" para as fileiras. Na tela larga essa área fica ao lado das fileiras; em
+  janela estreita, presa embaixo.
 - Clique numa carta e use o teclado: **1 a 9** manda para a fileira, **0** tira da fileira, **setas** mudam a
   ordem, **Enter** edita.
 - **Duplo clique** numa carta: trocar a imagem (busca, link, arquivo ou Ctrl+V), mudar o nome, remover.
@@ -29,8 +32,9 @@ No tabuleiro:
 - **Fileira** e **Item** acrescentam; **Exportar PNG** salva a imagem da tierlist.
 - Tudo salva sozinho. As tierlists ficam na lateral.
 
-A IA não vê as imagens: ela diz o nome certo de cada item e o app busca a foto (wiki da Fandom, Wikipedia e
-Bing). Quase sempre acerta; quando errar, é o duplo clique.
+A IA não vê as imagens: ela diz o nome certo de cada item e o app busca a foto (wiki da Fandom, Wikipedia e,
+por último, Bing). Quase sempre acerta; quando errar, é o duplo clique, que mostra primeiro as opções da Fandom
+e da Wikipedia.
 
 ## Quanto custa
 

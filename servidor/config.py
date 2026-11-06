@@ -32,7 +32,6 @@ DEFAULTS = {
     "reserva": "auto",
     "busca_web": True,
     "itens": 20,
-    "classificar": True,
 }
 
 _lock = threading.Lock()
@@ -74,7 +73,7 @@ def save(changes: dict) -> dict:
                 value = value if value in EFFORTS else "medium"
             elif key == "reserva":
                 value = str(value or "auto").strip() or "auto"
-            elif key in ("busca_web", "classificar"):
+            elif key == "busca_web":
                 value = bool(value)
             elif key == "itens":
                 value = clamp_items(value)

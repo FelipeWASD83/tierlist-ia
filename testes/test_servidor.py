@@ -19,6 +19,7 @@ def no_pictures(items, progress=None):
     for i, item in enumerate(items):
         item["image"] = None
         item["image_source"] = ""
+        item["pending"] = []
         if progress:
             progress(i + 1, len(items))
 
@@ -98,7 +99,7 @@ class TestServer(unittest.TestCase):
                 break
             time.sleep(0.05)
         self.assertEqual(task["estado"], "pronto", task)
-        self.assertEqual(task["sem_imagem"], 3)
+        self.assertEqual(task["pendentes"], 0)
         _, doc = self.call("GET", f"/api/tierlists/{task['tierlist']}")
         self.assertEqual(doc["title"], "Doces brasileiros")
         self.assertEqual(doc["request"], "doces brasileiros")

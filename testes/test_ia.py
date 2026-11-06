@@ -30,7 +30,10 @@ class TestBuild(unittest.TestCase):
         self.assertNotIn("temperature", body)
         self.assertIn("Exactly 20 items", body["system"][0]["text"])
         self.assertEqual(result["title"], "Doces brasileiros")
-        self.assertEqual([i["tier"] for i in result["items"]], [0, 1, -1])   # tier 7 does not exist
+        # the AI never ranks: even if a model sends tiers, every item starts unranked
+        self.assertEqual([i["tier"] for i in result["items"]], [-1, -1, -1])
+        self.assertNotIn("tier", tools["deliver_tierlist"]["input_schema"]["properties"]["items"]["items"]["properties"])
+        self.assertIn("you never rank", body["system"][0]["text"])
         self.assertEqual(result["searches"], 2)
         self.assertAlmostEqual(result["cost"], (1000 * 2 + 500 * 10) / 1e6 + 0.02)
 
@@ -84,26 +87,24 @@ class TestBuild(unittest.TestCase):
 
 
 class TestNormalize(unittest.TestCase):
-    def test_cut_dedupe_and_unranked(self):
+    def test_cut_dedupe_and_always_unranked(self):
         data = {"title": "", "tiers": [], "items": [
             {"name": "A", "tier": 0}, {"name": "a", "tier": 1}, {"name": "B", "tier": "x"}, {"name": "C", "tier": 2}]}
-        out = ia.normalize(data, 2, rank=True)
+        out = ia.normalize(data, 2)
         self.assertEqual(out["tiers"], ia.DEFAULT_TIERS)
         self.assertEqual([i["name"] for i in out["items"]], ["A", "B"])
-        self.assertEqual(out["items"][1]["tier"], -1)
-        self.assertEqual(out["title"], "Tierlist")
-        out = ia.normalize(data, 5, rank=False)
         self.assertTrue(all(i["tier"] == -1 for i in out["items"]))
+        self.assertEqual(out["title"], "Tierlist")
 
     def test_fandom_address_becomes_subdomain(self):
         data = {"items": [{"name": "A", "fandom_wiki": "https://OnePiece.fandom.com/wiki/Kaidou", "tier": 0},
                           {"name": "B", "fandom_wiki": "naruto", "tier": 0}]}
-        out = ia.normalize(data, 5, True)
+        out = ia.normalize(data, 5)
         self.assertEqual([i["fandom_wiki"] for i in out["items"]], ["onepiece", "naruto"])
 
     def test_empty_is_an_error(self):
         with self.assertRaises(ia.AIError):
-            ia.normalize({"items": []}, 5, True)
+            ia.normalize({"items": []}, 5)
 
 
 if __name__ == "__main__":

@@ -2,12 +2,14 @@
 
 Order for each item: the main image of its Fandom wiki article (fiction: characters, weapons, bosses...), then
 the lead image of its Wikipedia article (both titles come from the AI), then Bing Images, accepted only when
-the result's title or page mentions the item. Every picture is downloaded into dados/imagens/<sha1>.<ext>, so
-a tier list keeps working when the original site changes, and the PNG export can read it (same origin).
+the result's title or page mentions the item. Every picture ends up in dados/imagens/<sha1>.<ext>, so a tier
+list keeps working when the original site changes, and the PNG export can read it (same origin). The Fandom
+picture is fetched by the screen, not by this server (see `fill_pictures`).
 
 DuckDuckGo is not used: in 2026-11 its image endpoint answers automated requests with an anti-bot challenge.
 Bing goes through /images/async (the endpoint its own page uses for more results): in 2026-11 the regular
-/images/search page sometimes answered scripts with results for only the first word of the query.
+/images/search page sometimes answered scripts with results for only the first word of the query, and after
+many searches in a row it answered with unrelated pages. That is why it comes last and is filtered by name.
 """
 
 from __future__ import annotations
@@ -40,7 +42,9 @@ TIMEOUT = 20
 _LANG = re.compile(r"^[a-z]{2,3}(-[a-z]{2,8})?$")
 _WIKI = re.compile(r"^[a-z0-9][a-z0-9-]{1,60}$")
 _BING_ITEM = re.compile(r'class="iusc"[^>]*?\sm="([^"]+)"')
-_OWN_AGENT_HOSTS = ("wikipedia.org", "wikimedia.org", "fandom.com", "wikia.nocookie.net")
+# Wikimedia asks for an agent that names the client. Fandom's image server (static.wikia.nocookie.net) is the
+# opposite: in 2026-11 it answered 403 to that agent and served a browser's normally.
+_OWN_AGENT_HOSTS = ("wikipedia.org", "wikimedia.org")
 
 
 class ImageError(Exception):
@@ -122,7 +126,7 @@ def store(data: bytes) -> str:
 def download(url: str, referer: str | None = None) -> str:
     url = check_url(url)
     host = urllib.parse.urlsplit(url).hostname or ""
-    # Wikimedia asks for an agent that says who the client is; the rest gets a browser's.
+
     agent = USER_AGENT if host.endswith(_OWN_AGENT_HOSTS) else BROWSER_AGENT
     headers = {"User-Agent": agent, "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8"}
     if referer:
@@ -272,11 +276,52 @@ def mentions(result: dict, name: str) -> bool:
     return bool(wanted & (_words(result.get("title", "")) | _words(result.get("page", ""))))
 
 
+# ── Searching by hand (the drawer) ───────────────────────────────────────────
+
+
+def _page_search(api_url: str, query: str, limit: int) -> list[dict]:
+    """Articles matching `query` that have a main image: [{thumb, title}]."""
+    params = urllib.parse.urlencode({
+        "action": "query", "format": "json", "formatversion": "2", "generator": "search",
+        "gsrsearch": query, "gsrlimit": str(limit), "gsrnamespace": "0", "prop": "pageimages",
+        "piprop": "thumbnail", "pithumbsize": WIKI_THUMB, "pilicense": "any",
+    })
+    try:
+        data = _get_json(f"{api_url}?{params}")
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    pages = sorted((data.get("query") or {}).get("pages") or [], key=lambda p: p.get("index", 0))
+    return [{"thumb": p["thumbnail"]["source"], "title": p.get("title") or ""}
+            for p in pages if (p.get("thumbnail") or {}).get("source")]
+
+
+def search_candidates(query: str, wiki: str = "", lang: str = "en", limit: int = 16) -> list[dict]:
+    """Options for the "trocar imagem" drawer: Fandom (when the item has a wiki), Wikipedia, then Bing.
+
+    `browser: True` marks Fandom pictures: the screen downloads those itself (see `fill_pictures`).
+    """
+    out: list[dict] = []
+    if _WIKI.match(wiki or ""):
+        for r in _page_search(f"https://{wiki}.fandom.com/api.php", query, 8):
+            out.append({"thumb": r["thumb"], "full": r["thumb"], "title": r["title"], "source": "fandom",
+                        "browser": True})
+    lang = lang if _LANG.match(lang or "") else "en"
+    for r in _page_search(f"https://{lang}.wikipedia.org/w/api.php", query, 6):
+        out.append({"thumb": r["thumb"], "full": r["thumb"], "title": r["title"], "source": "wikipedia",
+                    "browser": False})
+    try:
+        for r in bing_search(query, limit=limit):
+            out.append({**r, "source": "bing", "browser": False})
+    except ImageError:
+        pass
+    return out[:limit + 8]
+
+
 # ── Putting it together ──────────────────────────────────────────────────────
 
 
 def picture_for(item: dict, wiki_urls: list[tuple[str, str]] | None = None) -> tuple[str | None, str]:
-    """(stored file name or None, where it came from). `wiki_urls`: [(url, source)], Fandom first, then Wikipedia."""
+    """(stored file name or None, where it came from): the given wiki URLs first, then Bing."""
     for url, source in wiki_urls or []:
         try:
             return download(url), source
@@ -296,7 +341,13 @@ def picture_for(item: dict, wiki_urls: list[tuple[str, str]] | None = None) -> t
 
 
 def fill_pictures(items: list[dict], progress: Callable[[int, int], None] | None = None) -> None:
-    """Sets `image` (and `image_source`) on each item in place. Items without a picture keep `image` = None."""
+    """Sets `image` (stored file or None) and `pending` (addresses the screen still has to fetch) on each item.
+
+    Fandom pictures are never downloaded here: since 2026-11 their image server (static.wikia.nocookie.net)
+    answers scripts with a Cloudflare challenge, which this app does not try to get around. It serves them to
+    browsers normally (with CORS open), so the screen downloads them and sends the bytes to /api/imagens/enviar.
+    The Wikipedia address goes along as the screen's second option.
+    """
     by_fandom: dict[str, list[str]] = {}
     by_lang: dict[str, list[str]] = {}
     for item in items:
@@ -308,21 +359,28 @@ def fill_pictures(items: list[dict], progress: Callable[[int, int], None] | None
     wiki = {(lang, t): u for lang, titles in by_lang.items() for t, u in wikipedia_images(titles, lang).items()}
 
     def one(item):
-        urls = []
         f = fandom.get((item.get("fandom_wiki") or "", item.get("fandom_title") or ""))
-        if f:
-            urls.append((f, "fandom"))
         w = wiki.get((item.get("wikipedia_lang") or "en", item.get("wikipedia_title") or ""))
-        if w:
-            urls.append((w, "wikipedia"))
-        return picture_for(item, urls)
+        if f:
+            return None, "", [f] + ([w] if w else [])
+        name, source = picture_for(item, [(w, "wikipedia")] if w else [])
+        return name, source, []
 
     done = 0
     # 4 at a time: upload.wikimedia.org answers 429 to bigger bursts.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for item, (name, source) in zip(items, pool.map(one, items)):
+        for item, (name, source, pending) in zip(items, pool.map(one, items)):
             item["image"] = name
             item["image_source"] = source
+            item["pending"] = pending
             done += 1
             if progress:
                 progress(done, len(items))
+
+
+def valid_wiki(wiki: str) -> bool:
+    return bool(_WIKI.match(wiki or ""))
+
+
+def valid_lang(lang: str) -> bool:
+    return bool(_LANG.match(lang or ""))

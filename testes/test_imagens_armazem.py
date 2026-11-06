@@ -99,6 +99,33 @@ class TestImages(TempData):
         with mock.patch.object(imagens, "_get_json", return_value=answer):
             self.assertEqual(imagens.wikipedia_images(["Trafalgar Law"]), {})
 
+    def test_fandom_pictures_are_left_for_the_screen(self):
+        items = [{"name": "Law", "fandom_wiki": "onepiece", "fandom_title": "Trafalgar D. Water Law",
+                  "wikipedia_title": "Trafalgar Law", "wikipedia_lang": "en"},
+                 {"name": "Pizza", "fandom_wiki": "", "fandom_title": "", "wikipedia_title": "Pizza",
+                  "wikipedia_lang": "en"}]
+        with mock.patch.object(imagens, "fandom_images", return_value={"Trafalgar D. Water Law": "https://static.wikia.nocookie.net/l.png"}),                 mock.patch.object(imagens, "wikipedia_images", return_value={"Trafalgar Law": "https://upload.wikimedia.org/law.png",
+                                                                             "Pizza": "https://upload.wikimedia.org/p.jpg"}),                 mock.patch.object(imagens, "download", return_value="p.jpg") as dl:
+            imagens.fill_pictures(items)
+        # the server never touches the Fandom image server; the screen gets Fandom first, Wikipedia second
+        self.assertEqual(items[0]["image"], None)
+        self.assertEqual(items[0]["pending"], ["https://static.wikia.nocookie.net/l.png",
+                                               "https://upload.wikimedia.org/law.png"])
+        self.assertEqual((items[1]["image"], items[1]["pending"]), ("p.jpg", []))
+        self.assertEqual([c.args[0] for c in dl.call_args_list], ["https://upload.wikimedia.org/p.jpg"])
+
+    def test_search_candidates_mark_fandom_for_the_browser(self):
+        def fake_search(api_url, query, limit):
+            return [{"thumb": f"{api_url}#img", "title": "x"}]
+        with mock.patch.object(imagens, "_page_search", side_effect=fake_search),                 mock.patch.object(imagens, "bing_search", return_value=[{"thumb": "https://t", "full": "https://f",
+                                                                          "title": "b", "page": ""}]):
+            out = imagens.search_candidates("Kaido", "onepiece", "en")
+            self.assertEqual([(r["source"], r["browser"]) for r in out],
+                             [("fandom", True), ("wikipedia", False), ("bing", False)])
+            out = imagens.search_candidates("Pizza", "evil.com/", "xx-bad!")
+            self.assertEqual([r["source"] for r in out], ["wikipedia", "bing"])
+            self.assertTrue(out[0]["thumb"].startswith("https://en.wikipedia.org/"))
+
     def test_fandom_host_and_bad_wiki(self):
         with mock.patch.object(imagens, "_get_json", return_value={}) as get:
             imagens.fandom_images(["Kaidou"], "onepiece")
@@ -127,6 +154,21 @@ class TestStore(TempData):
         self.assertEqual(cleaned["pool"], [two])
         self.assertIsNone(cleaned["items"][one]["image"])
         self.assertEqual(cleaned["request"], "pedido")
+
+    def test_pending_wiki_and_lang_are_checked(self):
+        doc = armazem.save(armazem.from_ai({"title": "T", "tiers": ["S"], "items": [
+            {"name": "a", "tier": -1, "image": None, "fandom_wiki": "onepiece", "wikipedia_lang": "en",
+             "pending": ["https://static.wikia.nocookie.net/a.png"]}]}, "p"))
+        item_id = doc["pool"][0]
+        self.assertEqual(doc["items"][item_id]["pending"], ["https://static.wikia.nocookie.net/a.png"])
+        loaded = armazem.load(doc["id"])
+        loaded["items"][item_id].update({"wiki": "evil.com/x", "lang": "../", "pending": [
+            "http://127.0.0.1/x", "https://ok/1", 5, "https://ok/2", "https://ok/3", "https://ok/4"]})
+        cleaned = armazem.clean(loaded, doc["id"])["items"][item_id]
+        self.assertEqual((cleaned["wiki"], cleaned["lang"]), ("", "en"))
+        self.assertEqual(cleaned["pending"], ["https://ok/1", "https://ok/2", "https://ok/3"])
+        loaded["items"][item_id]["image"] = imagens.store(PNG)
+        self.assertEqual(armazem.clean(loaded, doc["id"])["items"][item_id]["pending"], [])
 
     def test_summaries_and_delete(self):
         doc = armazem.save(armazem.from_ai({"title": "T", "tiers": ["S"], "items": [{"name": "a", "tier": 0}]}, "p"))

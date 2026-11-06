@@ -1,8 +1,9 @@
 # CLAUDE.md: tierlist-ia
 
 App local onde a pessoa descreve uma tierlist em texto ("personagens de One Piece do mais forte ao mais fraco"),
-escolhe quantos itens quer (5 a 60) e a IA monta tudo: título, fileiras, itens já classificados e uma imagem
-por item. Depois ele arrasta para ajustar, troca imagem, exporta PNG. Criado em 06/11/2026 a pedido dele. O
+escolhe quantos itens quer (5 a 60) e a IA monta: título, fileiras vazias e os itens com uma imagem cada, todos
+em "Sem fileira". **Quem classifica é a pessoa**, arrastando; também troca imagem e exporta PNG. Criado em
+06/11/2026 a pedido dele. O
 `CLAUDE.md` da raiz vale aqui também; o uso, para ele, está no `README.md`.
 
 Versão atual: `versao.json` (mesmo número no topo do `CHANGELOG.md`).
@@ -44,15 +45,30 @@ janela ◄── http://127.0.0.1:4362/
 
 ## 3. Decisões (não desfazer sem motivo novo)
 
+- **A IA não classifica** (pedido dele em 06/11/2026: "é para apenas criar a tierlist mas não ranquear"). O
+  esquema da ferramenta não tem campo de fileira, o prompt manda nunca ordenar por qualidade (critério do pedido,
+  como "do mais forte ao mais fraco", serve só para escolher os itens) e listar numa ordem neutra, e o
+  `normalize()` joga tudo para `tier` -1 mesmo que um modelo mande classificação. A chave "A IA já classifica"
+  da 1.0.0 saiu.
+- **"Sem fileira" sempre à vista**: na tela larga (2000 px ou mais) fica ao lado das fileiras, presa no alto; em
+  tela estreita, presa no pé da tela com rolagem própria.
 - **A IA não busca imagem; o servidor busca.** A busca na web da API devolve páginas, não imagens. A IA devolve,
   por item, o título do artigo na Fandom (`fandom_wiki` + `fandom_title`), o título na Wikipedia e um termo de
   busca; o `imagens.py` tenta nessa ordem.
-  - **Fandom primeiro** para ficção: a imagem principal do artigo é o retrato oficial do personagem.
+  - **Fandom primeiro** para ficção: a imagem principal do artigo é o retrato oficial do personagem. **Quem baixa
+    é a tela, não o servidor**: o servidor de imagens da Fandom (`static.wikia.nocookie.net`, Cloudflare) passou a
+    responder 403 com `Cf-Mitigated: challenge` ao servidor do app e serve navegador normalmente, com CORS `*`.
+    Contornar o desafio não se faz; então o servidor só descobre o endereço (a API `fandom.com/api.php` responde
+    normal), guarda em `pending` e a tela baixa pelo `fetch` comum (com o Referer padrão; sem Referer também cai
+    no desafio) e manda os bytes para `/api/imagens/enviar` (`resolvePicture` no `api.js`).
   - **Wikipedia** ignora redirecionamento para seção (`tofragment`): "Trafalgar Law" leva à lista de
     personagens, cuja imagem é foto de grupo.
   - **Bing por `/images/async`**: a página normal `/images/search` às vezes respondeu a script com o resultado só
     da primeira palavra ("Trafalgar" virou a praça). E o resultado só é aceito sozinho se o título ou a página
-    mencionar o nome do item (`mentions`); senão a carta fica "Sem imagem" e ele escolhe.
+    mencionar o nome do item (`mentions`); senão a carta fica "Sem imagem" e ele escolhe. Depois de muitas
+    buscas seguidas o Bing passa a devolver página sem relação nenhuma: por isso é o último recurso.
+  - **Trocar imagem** (gaveta): opções da Fandom da carta (`wiki` guardado no item), da Wikipedia e do Bing, nessa
+    ordem (`search_candidates`); as da Fandom também são baixadas pela tela.
   - **DuckDuckGo fora**: em 06/11/2026 responde a script com desafio anti-robô. Contornar isso não se faz.
   - Conferido em 06/11/2026 com 20 personagens de One Piece: todos com a imagem certa.
 - **Imagem sempre baixada para `dados/imagens`** (nome = SHA-1 dos bytes): a tierlist não quebra se o site
@@ -78,8 +94,11 @@ janela ◄── http://127.0.0.1:4362/
 ## 4. Testes e verificação
 
 ```
-python -m unittest discover -s testes -t .      # nesta pasta; 82 testes, uns 5 s, sem rede
+python -m unittest discover -s testes -t .      # nesta pasta; 85 testes, uns 5 s, sem rede
 ```
+
+- Na 1.1.0 (06/11/2026), na demo: as 20 cartas em "Sem fileira" e nenhuma nas fileiras, as 20 com imagem
+  (Fandom pela tela), gaveta com 8 opções da Fandom, 5 da Wikipedia e 11 do Bing, layout nas duas telas.
 
 - Conferido em 06/11/2026 na demo, em tela larga e em monitor em pé: gerar (barra de progresso), as 20 imagens,
   gaveta de editar com 16 opções, teclado, arrastar para outra fileira, salvamento no servidor, exportar PNG,

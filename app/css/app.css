@@ -300,7 +300,14 @@ button { cursor: pointer; }
 
 .zone { display: flex; flex-wrap: wrap; align-content: flex-start; gap: var(--e2); padding: var(--e2); min-height: calc(var(--carta) + 16px); }
 .zone.over { background: #fff8d6; }
-.pool-wrap { display: grid; gap: var(--e2); }
+/* "Sem fileira" fica presa no pé da tela: é onde todas as cartas começam, então está sempre à vista. */
+.pool-wrap {
+  display: grid; gap: var(--e2);
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 0 calc(var(--e2) * -1); padding: var(--e2) var(--e2) var(--e3);
+  background: var(--papel);
+}
+.pool-wrap .pool { max-height: 36vh; overflow-y: auto; }
 .pool-title { margin: var(--e2) 0 0; font-size: var(--t-medio); font-weight: 850; font-stretch: 118%; }
 .pool-title span { color: var(--tinta-fraca); font-weight: 600; font-stretch: 100%; font-size: var(--t-corpo); font-variant-numeric: tabular-nums; }
 .pool { border: 3px dashed #a6a2ad; border-radius: var(--raio); min-height: calc(var(--carta) + 24px); }
@@ -371,6 +378,22 @@ button { cursor: pointer; }
   font-weight: 650; transition: opacity var(--normal) var(--curva-saida), transform var(--normal) var(--curva-saida);
 }
 @starting-style { .toast { opacity: 0; transform: translate(-50%, 16px); } }
+
+/* Tela larga: "Sem fileira" (onde todas as cartas começam) fica ao lado das fileiras, presa no alto ao rolar. */
+@media (min-width: 2000px) {
+  .board {
+    grid-template-columns: minmax(0, 1fr) minmax(520px, 32%);
+    grid-template-areas: "head head" "meta meta" "tiers pool" "hint hint";
+    align-items: start; column-gap: var(--e6);
+  }
+  .board-head { grid-area: head; }
+  .board-meta { grid-area: meta; }
+  .tiers { grid-area: tiers; }
+  .pool-wrap { grid-area: pool; top: var(--e5); bottom: auto; margin: 0; padding: 0; }
+  .pool-title { margin-top: 0; }
+  .pool-wrap .pool { max-height: calc(100vh - 120px); }
+  .hint { grid-area: hint; }
+}
 
 /* Monitor em pé e janelas estreitas: a lateral vira faixa no topo. */
 @media (max-width: 1180px) {

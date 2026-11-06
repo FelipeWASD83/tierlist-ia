@@ -4,7 +4,10 @@ Shape:
     {id, title, request, model, cost, created, updated,
      tiers: [{id, label, color, items: [item id, ...]}],
      pool:  [item id, ...],                  # unranked
-     items: {item id: {name, image, query}}}
+     items: {item id: {name, image, query, wiki, lang, pending}}}
+
+`wiki` is the item's Fandom subdomain and `lang` its Wikipedia edition (the drawer searches there first).
+`pending` lists picture addresses the screen still has to fetch (Fandom, see imagens.fill_pictures).
 """
 
 from __future__ import annotations
@@ -45,8 +48,11 @@ def from_ai(result: dict, request: str) -> dict:
     items, pool = {}, []
     for item in result["items"]:
         item_id = new_id()
-        items[item_id] = {"name": item["name"], "image": item.get("image"), "query": item.get("image_query") or item["name"]}
-        if 0 <= item["tier"] < len(tiers):
+        items[item_id] = {"name": item["name"], "image": item.get("image"),
+                          "query": item.get("image_query") or item["name"], "wiki": item.get("fandom_wiki") or "",
+                          "lang": item.get("wikipedia_lang") or "en",
+                          "pending": [] if item.get("image") else list(item.get("pending") or [])}
+        if 0 <= item.get("tier", -1) < len(tiers):
             tiers[item["tier"]]["items"].append(item_id)
         else:
             pool.append(item_id)
@@ -65,10 +71,17 @@ def clean(doc: dict, list_id: str) -> dict:
         if not _ID.match(str(item_id)) or not isinstance(item, dict):
             continue
         image = item.get("image")
+        image = image if isinstance(image, str) and imagens.path_of(image) else None
+        pending = item.get("pending") if isinstance(item.get("pending"), list) else []
+        wiki = str(item.get("wiki") or "").strip().lower()
+        lang = str(item.get("lang") or "en").strip().lower()
         items[item_id] = {
             "name": str(item.get("name") or "").strip()[:80] or "Sem nome",
-            "image": image if isinstance(image, str) and imagens.path_of(image) else None,
+            "image": image,
             "query": str(item.get("query") or item.get("name") or "").strip()[:200],
+            "wiki": wiki if imagens.valid_wiki(wiki) else "",
+            "lang": lang if imagens.valid_lang(lang) else "en",
+            "pending": [] if image else [u for u in pending if isinstance(u, str) and u.startswith("https://")][:3],
         }
     placed = set()
 

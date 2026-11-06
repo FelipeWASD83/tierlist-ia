@@ -67,10 +67,8 @@ TOOL_SCHEMA = {
                     "image_query": {"type": "string", "description":
                                     "Image search query that finds a picture of exactly this item "
                                     "(add the franchise, brand or context so it is not ambiguous)."},
-                    "tier": {"type": "integer", "description": "Index of the row in `tiers` (0 = best), or -1 to leave unranked."},
                 },
-                "required": ["name", "wikipedia_title", "wikipedia_lang", "fandom_wiki", "fandom_title", "image_query",
-                             "tier"],
+                "required": ["name", "wikipedia_title", "wikipedia_lang", "fandom_wiki", "fandom_title", "image_query"],
                 "additionalProperties": False,
             },
         },
@@ -92,21 +90,15 @@ class NoCreditError(AIError):
 _SIDES = {"openai": "OpenAI", "claude": "Claude"}
 
 
-def system_prompt(count: int, rank: bool, web: bool) -> str:
-    ranking = (
-        "Place every item in a row (`tier` = row index) according to the request; when the request gives no "
-        "criterion, use the general consensus (reviews, popularity, community rankings)."
-        if rank else
-        "Do NOT rank: set `tier` to -1 on every item. The person will rank them."
-    )
+def system_prompt(count: int, web: bool) -> str:
     research = (
-        "Use web search when the theme depends on recent or specific facts (releases, rosters, current "
-        "rankings, a season, a year) so the items are real and up to date. Do not search for images; "
+        "Use web search when the theme depends on recent or specific facts (releases, rosters, a "
+        "season, a year) so the items are real and up to date. Do not search for images; "
         "searching once or twice is usually enough."
         if web else
         "Answer from what you already know."
     )
-    return f"""You build tier lists for a tier list app. The person describes a theme; you pick the items and hand everything back through the `{TOOL_NAME}` tool.
+    return f"""You set up tier lists for a tier list app. The person describes a theme; you pick the items and hand everything back through the `{TOOL_NAME}` tool. The person ranks the items themselves, in the app: you never rank, judge or order them by quality, even when the request mentions a criterion ("strongest to weakest", "best to worst"). That criterion is for the person; use it only to choose which items belong in the list.
 
 Rules:
 - Exactly {count} items, unless the theme truly has fewer (then all of them). No duplicates.
@@ -115,8 +107,8 @@ Rules:
 - `wikipedia_title`: the exact title of the article about THIS item (a character's own article, not the series or a list of characters). Empty when no article is about it alone. Prefer English Wikipedia; use another edition only when the item has no English article.
 - `fandom_wiki` and `fandom_title`: for anything from a game, anime, manga, series, comic or film, the franchise's main Fandom wiki (subdomain, e.g. `onepiece`, `naruto`, `eldenring`, `minecraft`) and the item's own article title there (Fandom often uses the full official name, e.g. "Trafalgar D. Water Law", "Kaidou"). Both empty for real-world things.
 - `image_query`: a search query that finds this exact item's picture (e.g. "Monkey D. Luffy One Piece anime", "Hollow Knight game cover art").
-- Rows: S, A, B, C, D, F by default. Use other labels only if the request asks for them or the theme clearly calls for it.
-- {ranking}
+- Rows: S, A, B, C, D, F by default. Use other labels only if the request asks for them or the theme clearly calls for it. The rows start empty.
+- List the items in a neutral order (the theme's own order, like release or appearance, or alphabetical), never best to worst.
 - {research}
 - Title and row labels in the language of the request.
 - When done, call `{TOOL_NAME}` once with the whole list. Do not write the list as text."""
@@ -129,8 +121,9 @@ def _web_search_tool(model: str) -> dict:
     return {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 
 
-def normalize(data: dict, count: int, rank: bool) -> dict:
-    """Clean the tool input: valid rows, at most `count` items, no duplicates, tier index in range."""
+def normalize(data: dict, count: int) -> dict:
+    """Clean the tool input: valid rows, at most `count` items, no duplicates. Every item starts unranked
+    (`tier` -1): even if a model sends a ranking anyway, it is dropped here."""
     if not isinstance(data, dict):
         raise AIError("A IA devolveu a tierlist num formato que não deu para ler.")
     tiers = []
@@ -148,12 +141,6 @@ def normalize(data: dict, count: int, rank: bool) -> dict:
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
-        try:
-            tier = int(item.get("tier", -1))
-        except (TypeError, ValueError):
-            tier = -1
-        if not rank or not 0 <= tier < len(tiers):
-            tier = -1
         lang = str(item.get("wikipedia_lang") or "en").strip().lower()[:12]
         items.append({
             "name": name,
@@ -164,7 +151,7 @@ def normalize(data: dict, count: int, rank: bool) -> dict:
                 .removeprefix("http://").split(".fandom.com")[0].split("/")[0][:60],
             "fandom_title": str(item.get("fandom_title") or "").strip()[:200],
             "image_query": str(item.get("image_query") or name).strip()[:200] or name,
-            "tier": tier,
+            "tier": -1,
         })
         if len(items) >= count:
             break
@@ -205,7 +192,7 @@ class AIClient:
 
     # ── Public entry point ────────────────────────────────────────────────
 
-    def build_tierlist(self, request: str, count: int, rank: bool = True, web: bool = True,
+    def build_tierlist(self, request: str, count: int, web: bool = True,
                        progress: Callable[[str], None] | None = None) -> dict:
         progress = progress or (lambda _text: None)
         order = self.order()
@@ -215,14 +202,14 @@ class AIClient:
         for model in order:
             try:
                 if eh_claude(model):
-                    data, usage, searches = self._claude(model, request, count, rank, web, progress)
+                    data, usage, searches = self._claude(model, request, count, web, progress)
                 else:
-                    data, usage, searches = self._openai(model, request, count, rank, web, progress)
+                    data, usage, searches = self._openai(model, request, count, web, progress)
             except NoCreditError as e:
                 self.breaker.abrir(provedor_de(model))
                 failures.append(e)
                 continue
-            result = normalize(data, count, rank)
+            result = normalize(data, count)
             cost = provedor.custo(model, usage)
             if cost is not None:
                 cost += searches * WEB_SEARCH_PRICE
@@ -238,8 +225,8 @@ class AIClient:
 
     # ── Claude ────────────────────────────────────────────────────────────
 
-    def _claude(self, model, request, count, rank, web, progress):
-        system = [{"type": "text", "text": system_prompt(count, rank, web), "cache_control": provedor.CACHE}]
+    def _claude(self, model, request, count, web, progress):
+        system = [{"type": "text", "text": system_prompt(count, web), "cache_control": provedor.CACHE}]
         messages: list[dict] = [{"role": "user", "content": [{"type": "text", "text": request}]}]
         function = {"type": "function", "name": TOOL_NAME, "description": TOOL_DESCRIPTION, "parameters": TOOL_SCHEMA}
         usage_total = {"input_tokens": 0, "output_tokens": 0,
@@ -280,7 +267,7 @@ class AIClient:
 
     # ── OpenAI ────────────────────────────────────────────────────────────
 
-    def _openai(self, model, request, count, rank, web, progress):
+    def _openai(self, model, request, count, web, progress):
         function = {"type": "function", "name": TOOL_NAME, "description": TOOL_DESCRIPTION,
                     "parameters": TOOL_SCHEMA, "strict": True}
         usage_total = {"input_tokens": 0, "output_tokens": 0,
@@ -289,7 +276,7 @@ class AIClient:
         progress("Pesquisando o tema" if web else "Escolhendo os itens")
         for forced in (False, True):
             tools = [function] if forced or not web else [{"type": "web_search"}, function]
-            body = {"model": model, "instructions": system_prompt(count, rank, web), "input": request,
+            body = {"model": model, "instructions": system_prompt(count, web), "input": request,
                     "tools": tools, "tool_choice": {"type": "function", "name": TOOL_NAME} if forced else "auto",
                     "reasoning": {"effort": self.effort}, "max_output_tokens": MAX_OUTPUT, "store": False}
             data = self._post("openai", self.url_openai, {"Authorization": f"Bearer {self.openai_key}"}, body)

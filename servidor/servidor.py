@@ -74,7 +74,6 @@ def start_generation(body: dict) -> str:
     if len(request) > 4000:
         raise ApiError("O pedido passou de 4.000 caracteres.")
     count = config.clamp_items(body.get("itens"))
-    rank = bool(body.get("classificar", True))
     web = bool(body.get("busca_web", True))
     model = str(body.get("modelo") or "").strip() or None
     client = STATE.client(model)
@@ -91,13 +90,13 @@ def start_generation(body: dict) -> str:
 
     def run():
         try:
-            result = client.build_tierlist(request, count, rank, web, progress=phase)
+            result = client.build_tierlist(request, count, web, progress=phase)
             phase("Buscando as imagens", 0, len(result["items"]))
             imagens.fill_pictures(result["items"], lambda d, t: phase("Buscando as imagens", d, t))
             doc = armazem.save(armazem.from_ai(result, request))
             task.update({"estado": "pronto", "tierlist": doc["id"], "modelo": result["model"],
                          "trocou": result["replaced"], "custo": result["cost"], "buscas": result["searches"],
-                         "sem_imagem": sum(1 for i in result["items"] if not i.get("image"))})
+                         "pendentes": sum(1 for i in result["items"] if i.get("pending"))})
         except ia.AIError as e:
             task.update({"estado": "erro", "erro": str(e)})
         except Exception as e:  # anything else still has to reach the screen, not hang the spinner
@@ -128,7 +127,14 @@ class Handler(BaseHTTPRequestHandler):
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         if status >= 400:
-            # The request body may not have been read: closing keeps it from being parsed as the next request.
+            # A refused request may still have its body waiting. Read it first (closing a Windows socket with
+            # unread data resets the connection before the client sees the answer), then close, so a body that
+            # was too big to read is never parsed as the next request.
+            if not getattr(self, "_body_read", True):
+                length = int(self.headers.get("Content-Length") or 0)
+                if 0 < length <= MAX_BODY:
+                    self.rfile.read(length)
+                self._body_read = True
             self.send_header("Connection", "close")
             self.close_connection = True
         self.end_headers()
@@ -154,6 +160,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
             raise ApiError("Arquivo grande demais (máximo 8 MB).", 413)
+        self._body_read = True
         return self.rfile.read(length) if length else b""
 
     def _body(self) -> dict:
@@ -183,6 +190,7 @@ class Handler(BaseHTTPRequestHandler):
         self._handle("DELETE")
 
     def _handle(self, method: str):
+        self._body_read = False
         if not self._host_ok():
             return self._send(421, b"host recusado", "text/plain")
         url = urllib.parse.urlsplit(self.path)
@@ -278,7 +286,9 @@ class Handler(BaseHTTPRequestHandler):
                 q = (query.get("q") or [""])[0].strip()
                 if not q:
                     raise ApiError("Escreve o que buscar.")
-                return self._json({"resultados": imagens.bing_search(q[:200], limit=16)})
+                wiki = (query.get("wiki") or [""])[0].strip().lower()
+                lang = (query.get("lang") or ["en"])[0].strip().lower()
+                return self._json({"resultados": imagens.search_candidates(q[:200], wiki, lang)})
             if method == "POST" and action == "baixar":
                 body = self._body()
                 return self._json({"image": imagens.download(str(body.get("url") or ""))})

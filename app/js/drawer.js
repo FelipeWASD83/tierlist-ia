@@ -1,6 +1,6 @@
 // Side drawer: edit a card (name, picture) and the settings (keys, model, update).
 
-import { api, imageUrl } from './api.js';
+import { api, imageUrl, keepFromBrowser } from './api.js';
 import * as board from './board.js';
 
 const drawer = document.getElementById('drawer');
@@ -85,7 +85,7 @@ export function editItem(id) {
     h('p', { class: 'note' }, 'A IA não vê as imagens. Se a foto veio errada, escolha outra abaixo, cole um link ou solte um arquivo.'));
 
   const setImage = (name) => {
-    board.updateItem(id, { image: name });
+    board.updateItem(id, { image: name, pending: [] });
     pic.firstChild.replaceWith(preview(doc.items[id]));
     status.textContent = 'Imagem trocada.';
   };
@@ -105,18 +105,22 @@ export function editItem(id) {
     if (!q) return;
     grid.replaceChildren(h('p', { class: 'note' }, 'Buscando...'));
     try {
-      const { resultados } = await api(`imagens/buscar?q=${encodeURIComponent(q)}`);
+      const params = new URLSearchParams({ q, wiki: item.wiki || '', lang: item.lang || 'en' });
+      const { resultados } = await api(`imagens/buscar?${params}`);
       board.updateItem(id, { query: q });
       if (!resultados.length) { grid.replaceChildren(h('p', { class: 'note' }, 'Nada encontrado. Tenta outras palavras.')); return; }
       grid.replaceChildren(...resultados.map((r) => {
-        const b = h('button', { class: 'candidate', type: 'button', title: r.title || '' },
-          h('img', { src: r.thumb, alt: r.title || 'Opção de imagem', loading: 'lazy', referrerpolicy: 'no-referrer' }));
+        const source = { fandom: 'Fandom', wikipedia: 'Wikipedia', bing: 'Bing' }[r.source] || '';
+        const b = h('button', { class: 'candidate', type: 'button', title: [r.title, source].filter(Boolean).join(' · ') },
+          h('img', { src: r.thumb, alt: r.title || 'Opção de imagem', loading: 'lazy' }));
         b.addEventListener('click', async () => {
           b.setAttribute('aria-busy', 'true');
           status.textContent = 'Baixando...';
           try {
-            const { image } = await api('imagens/baixar', { method: 'POST', body: { url: r.full } })
-              .catch(() => api('imagens/baixar', { method: 'POST', body: { url: r.thumb } }));
+            const image = r.browser
+              ? await keepFromBrowser(r.full)
+              : (await api('imagens/baixar', { method: 'POST', body: { url: r.full } })
+                .catch(() => api('imagens/baixar', { method: 'POST', body: { url: r.thumb } }))).image;
             setImage(image);
           } catch (err) {
             status.textContent = err.message;

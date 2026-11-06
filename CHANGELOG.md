@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (06/11/2026)
+
+**Mudou**
+
+- A IA só monta a tierlist: escolhe os itens e as imagens, mas não classifica mais. Todas as cartas chegam em
+  "Sem fileira" para você arrastar.
+- "Sem fileira" fica sempre à vista: ao lado das fileiras na tela larga e presa embaixo em janela estreita.
+- Trocar imagem mostra primeiro as opções da wiki da Fandom e da Wikipedia, e só depois as do Bing.
+
+**Corrigido**
+
+- Imagens da Fandom que paravam de chegar e deixavam cartas sem foto.
+
+**Saiu**
+
+- A chave "A IA já classifica".
+
 ## 1.0.0 (06/11/2026)
 
 **Novo**
